@@ -464,7 +464,7 @@ export default function DashboardPage() {
                     <td>
                       {r.is_medical_desert ? (
                         <span className={`badge badge-${r.desert_severity === 'critical' ? 'error' : r.desert_severity === 'high' ? 'warning' : 'info'}`}>
-                          ⚠ {r.desert_severity}
+                          ⚠ {r.desert_severity && r.desert_severity.charAt(0).toUpperCase() + r.desert_severity.slice(1)}
                         </span>
                       ) : (
                         <span className="badge badge-success">✓ Adequate</span>
