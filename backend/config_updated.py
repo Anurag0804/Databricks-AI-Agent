@@ -64,25 +64,18 @@ class Settings(BaseSettings):
     table_facilities_anomalies: str = Field(default="facilities_anomalies", description="Anomalies detection table")
     table_regional_summary: str = Field(default="regional_summary", description="Regional aggregations table")
     table_facilities_bronze_source: str = Field(default="facilities_bronze_source", description="Bronze source table")
-    table_facility_documents: str = Field(default="facility_documents", description="Facility documents for vector search")
+    table_facility_documents: str = Field(default="facility_documents", description="Document table for Vector Search")
     
     # ==========================================================================
     # VECTOR SEARCH CONFIGURATION
     # ==========================================================================
-    vector_search_endpoint: str = Field(default="facility_search_endpoint", description="Vector search endpoint name")
-    vector_search_index: str = Field(default="facility_embeddings", description="Vector search index name (short)")
-    vector_index_name: str = Field(
-        default="virtue_foundation.ghana.facility_embeddings",
-        description="Fully qualified vector search index name"
-    )
+    vector_search_enabled: bool = Field(default=True, description="Use Vector Search index for RAG")
+    vector_search_endpoint: str = Field(default="facility_search_endpoint", description="Vector Search endpoint name")
+    vector_search_index: str = Field(default="facility_embeddings", description="Vector Search index name")
     
     # ==========================================================================
     # MODEL ENDPOINTS
     # ==========================================================================
-    databricks_serving_endpoint: str = Field(
-        default="https://dbc-5222fa5f-b762.cloud.databricks.com/serving-endpoints",
-        description="Databricks serving endpoint base URL for LLM"
-    )
     llm_model_name: str = Field(
         default="databricks-meta-llama-3-3-70b-instruct",
         description="LLM endpoint for text generation"
@@ -157,19 +150,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, description="Access token expiration")
     
     # ==========================================================================
-    # COMPUTED PROPERTIES
-    # ==========================================================================
-    @property
-    def facilities_table(self) -> str:
-        """Get fully qualified facilities table name."""
-        return f"{self.catalog_name}.{self.schema_name}.{self.table_facilities_silver}"
-    
-    @property
-    def facility_documents_table(self) -> str:
-        """Get fully qualified facility documents table name."""
-        return f"{self.catalog_name}.{self.schema_name}.{self.table_facility_documents}"
-    
-    # ==========================================================================
     # VALIDATORS
     # ==========================================================================
     @field_validator("databricks_host")
@@ -194,18 +174,148 @@ class Settings(BaseSettings):
     def validate_log_level(cls, v: str) -> str:
         """Ensure log level is valid."""
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if v.upper() not in valid_levels:
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
             raise ValueError(f"Log level must be one of {valid_levels}")
-        return v.upper()
+        return v_upper
+    
+    # ==========================================================================
+    # COMPUTED PROPERTIES
+    # ==========================================================================
+    @property
+    def fully_qualified_table(self) -> str:
+        """Get fully qualified table prefix: catalog.schema."""
+        return f"{self.catalog_name}.{self.schema_name}"
+    
+    @property
+    def facilities_table(self) -> str:
+        """Get fully qualified facilities table name."""
+        return f"{self.fully_qualified_table}.{self.table_facilities_silver}"
+    
+    @property
+    def enriched_table(self) -> str:
+        """Get fully qualified enriched table name."""
+        return f"{self.fully_qualified_table}.{self.table_facilities_enriched}"
+    
+    @property
+    def anomalies_table(self) -> str:
+        """Get fully qualified anomalies table name."""
+        return f"{self.fully_qualified_table}.{self.table_facilities_anomalies}"
+    
+    @property
+    def regional_table(self) -> str:
+        """Get fully qualified regional summary table name."""
+        return f"{self.fully_qualified_table}.{self.table_regional_summary}"
+    
+    @property
+    def documents_table(self) -> str:
+        """Get fully qualified documents table name."""
+        return f"{self.fully_qualified_table}.{self.table_facility_documents}"
+    
+    @property
+    def vector_index_name(self) -> str:
+        """Get fully qualified vector index name."""
+        return f"{self.fully_qualified_table}.{self.vector_search_index}"
+    
+    @property
+    def databricks_serving_endpoint(self) -> str:
+        """Get Databricks serving endpoint base URL."""
+        return f"{self.databricks_host}/serving-endpoints"
+    
+    @property
+    def is_production(self) -> bool:
+        """Check if running in production environment."""
+        return self.environment == "production"
+    
+    @property
+    def is_development(self) -> bool:
+        """Check if running in development environment."""
+        return self.environment == "development"
 
 
 # ==========================================================================
-# GLOBAL SETTINGS INSTANCE
+# SINGLETON INSTANCE
 # ==========================================================================
 settings = Settings()
 
 
 # ==========================================================================
-# EXPORTS
+# CONSTANTS
 # ==========================================================================
-__all__ = ["settings", "Settings"]
+class FacilityTypes:
+    """Valid facility types from the data."""
+    HOSPITAL = "hospital"
+    CLINIC = "clinic"
+    PHARMACY = "pharmacy"
+    DENTIST = "dentist"
+    DOCTOR = "doctor"
+    HEALTH_POST = "health_post"
+    MATERNITY_HOME = "maternity_home"
+    
+    @classmethod
+    def all(cls) -> List[str]:
+        """Get all facility types."""
+        return [
+            cls.HOSPITAL,
+            cls.CLINIC,
+            cls.PHARMACY,
+            cls.DENTIST,
+            cls.DOCTOR,
+            cls.HEALTH_POST,
+            cls.MATERNITY_HOME
+        ]
+
+
+class OperatorTypes:
+    """Valid operator types."""
+    PUBLIC = "public"
+    PRIVATE = "private"
+    NGO = "ngo"
+    FAITH_BASED = "faith_based"
+    
+    @classmethod
+    def all(cls) -> List[str]:
+        """Get all operator types."""
+        return [cls.PUBLIC, cls.PRIVATE, cls.NGO, cls.FAITH_BASED]
+
+
+class GhanaRegions:
+    """Ghana administrative regions."""
+    GREATER_ACCRA = "Greater Accra"
+    ASHANTI = "Ashanti"
+    WESTERN = "Western"
+    EASTERN = "Eastern"
+    CENTRAL = "Central"
+    VOLTA = "Volta"
+    NORTHERN = "Northern"
+    UPPER_EAST = "Upper East"
+    UPPER_WEST = "Upper West"
+    BRONG_AHAFO = "Brong Ahafo"
+    
+    @classmethod
+    def all(cls) -> List[str]:
+        """Get all regions."""
+        return [
+            cls.GREATER_ACCRA,
+            cls.ASHANTI,
+            cls.WESTERN,
+            cls.EASTERN,
+            cls.CENTRAL,
+            cls.VOLTA,
+            cls.NORTHERN,
+            cls.UPPER_EAST,
+            cls.UPPER_WEST,
+            cls.BRONG_AHAFO
+        ]
+
+
+# ==========================================================================
+# EXPORT
+# ==========================================================================
+__all__ = [
+    "Settings",
+    "settings",
+    "FacilityTypes",
+    "OperatorTypes",
+    "GhanaRegions"
+]

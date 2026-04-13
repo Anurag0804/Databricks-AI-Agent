@@ -1,16 +1,13 @@
 """
-Vector search service for semantic facility search using embeddings.
+Vector search service for semantic facility search using pre-computed embeddings.
 
-Provides embedding generation via Databricks endpoints and in-memory
-vector similarity search with caching for performance.
+Uses Databricks Vector Search to query facilities from the pre-computed index,
+eliminating the need for on-the-fly embedding generation and rate limits.
 """
 
 import logging
-from typing import List, Dict, Any, Tuple, Optional
-from functools import lru_cache
-import numpy as np
-import time
-from openai import OpenAI
+from typing import List, Dict, Any, Optional
+from databricks.vector_search.client import VectorSearchClient
 
 from ..config import settings
 
@@ -19,17 +16,16 @@ logger = logging.getLogger(__name__)
 
 class VectorSearchService:
     """
-    Service for generating embeddings and performing semantic search.
+    Service for performing semantic search using Databricks Vector Search.
     
-    Uses Databricks embedding endpoints and cosine similarity for search.
-    Implements LRU caching for frequently used embeddings.
+    Queries the pre-computed vector search index instead of generating
+    embeddings on-the-fly, avoiding rate limit issues.
     """
     
     def __init__(
         self,
         workspace_url: Optional[str] = None,
-        access_token: Optional[str] = None,
-        embedding_model: Optional[str] = None
+        access_token: Optional[str] = None
     ):
         """
         Initialize vector search service.
@@ -37,221 +33,127 @@ class VectorSearchService:
         Args:
             workspace_url: Databricks workspace URL
             access_token: Databricks access token
-            embedding_model: Embedding model endpoint name
         """
         self.workspace_url = workspace_url or settings.databricks_host
         self.access_token = access_token or settings.databricks_token
-        self.embedding_model = embedding_model or settings.embedding_model_name
+        self.index_name = settings.vector_index_name
         
-        # Initialize OpenAI client for Databricks endpoints
-        self.client = OpenAI(
-            api_key=self.access_token,
-            base_url=settings.databricks_serving_endpoint
+        # Initialize Vector Search client
+        self.client = VectorSearchClient(
+            workspace_url=self.workspace_url,
+            personal_access_token=self.access_token,
+            disable_notice=True
         )
         
-        # Embedding cache
-        self._embedding_cache: Dict[str, List[float]] = {}
-        self._cache_max_size = settings.embedding_cache_size
-        
-        logger.info(f"Initialized VectorSearchService with model: {self.embedding_model}")
-    
-    def generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate embedding vector for text using Databricks endpoint.
-        
-        Args:
-            text: Input text to embed
-            
-        Returns:
-            Embedding vector as list of floats
-            
-        Raises:
-            Exception: If embedding generation fails
-        """
-        # Check cache first
-        if text in self._embedding_cache:
-            logger.debug(f"Cache hit for text (length: {len(text)})")
-            return self._embedding_cache[text]
-        
-        try:
-            # Call Databricks embedding endpoint
-            response = self.client.embeddings.create(
-                model=self.embedding_model,
-                input=text
-            )
-            
-            # Extract embedding vector
-            embedding = response.data[0].embedding
-            
-            # Cache if within size limit
-            if len(self._embedding_cache) < self._cache_max_size:
-                self._embedding_cache[text] = embedding
-            
-            logger.debug(f"Generated embedding (dimension: {len(embedding)})")
-            return embedding
-            
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {e}")
-            raise
-    
-    def batch_generate_embeddings(
-        self,
-        texts: List[str],
-        batch_size: int = 10
-    ) -> List[List[float]]:
-        """
-        Generate embeddings for multiple texts in batches.
-        
-        Args:
-            texts: List of texts to embed
-            batch_size: Number of texts per batch
-            
-        Returns:
-            List of embedding vectors
-        """
-        embeddings = []
-        
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            
-            try:
-                # Anti-throttling logic for Databricks unprovisioned endpoints (max 1 QPS)
-                # We sleep BEFORE the call so it distances itself from the question embeddings too!
-                time.sleep(1.5)
-                
-                # Call API with batch
-                response = self.client.embeddings.create(
-                    model=self.embedding_model,
-                    input=batch
-                )
-                
-                # Extract embeddings
-                batch_embeddings = [data.embedding for data in response.data]
-                embeddings.extend(batch_embeddings)
-                
-                # Cache embeddings
-                for text, embedding in zip(batch, batch_embeddings):
-                    if len(self._embedding_cache) < self._cache_max_size:
-                        self._embedding_cache[text] = embedding
-                
-                logger.debug(f"Generated {len(batch_embeddings)} embeddings (batch {i//batch_size + 1})")
-                
-            except Exception as e:
-                logger.error(f"Failed to generate batch embeddings: {e}")
-                raise
-        
-        logger.info(f"Generated total {len(embeddings)} embeddings")
-        return embeddings
-    
-    @staticmethod
-    def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-        """
-        Calculate cosine similarity between two vectors.
-        
-        Args:
-            vec1: First vector
-            vec2: Second vector
-            
-        Returns:
-            Similarity score between 0 and 1
-        """
-        arr1 = np.array(vec1)
-        arr2 = np.array(vec2)
-        
-        # Compute cosine similarity
-        dot_product = np.dot(arr1, arr2)
-        norm1 = np.linalg.norm(arr1)
-        norm2 = np.linalg.norm(arr2)
-        
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-        
-        similarity = dot_product / (norm1 * norm2)
-        
-        # Ensure in [0, 1] range (handle floating point errors)
-        return float(max(0.0, min(1.0, similarity)))
+        logger.info(f"Initialized VectorSearchService with index: {self.index_name}")
     
     def search_facilities(
         self,
         query: str,
-        facilities: List[Dict[str, Any]],
         top_k: int = 5,
-        similarity_threshold: float = 0.0
+        similarity_threshold: float = 0.0,
+        filters: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic search over facilities using vector similarity.
+        Perform semantic search over facilities using Vector Search index.
         
         Args:
             query: Natural language search query
-            facilities: List of facility dictionaries with 'search_text' field
             top_k: Number of results to return
-            similarity_threshold: Minimum similarity score
+            similarity_threshold: Minimum similarity score (0-1)
+            filters: Optional filters to apply (e.g., {"facility_type": "hospital"})
             
         Returns:
             List of results with facility data and similarity scores
-        """
-        # Generate query embedding
-        logger.info(f"Searching facilities with query: {query[:100]}...")
-        query_embedding = self.generate_embedding(query)
-        
-        # Calculate similarities
-        results = []
-        valid_facilities = []
-        texts_to_embed = []
-        
-        # Prepare valid texts
-        for facility in facilities:
-            search_text = facility.get("search_text", "")
-            if not search_text:
-                search_text = " ".join([
-                    str(facility.get("name", "")).strip(),
-                    str(facility.get("organizationDescription", "")).strip(),
-                    str(facility.get("address_city", "")).strip(),
-                    str(facility.get("address_stateOrRegion", "")).strip()
-                ])
             
-            if search_text.strip():
-                valid_facilities.append(facility)
-                texts_to_embed.append(search_text.strip())
-                
-        # Batch generate embeddings instead of sequential
-        if texts_to_embed:
-            logger.info(f"Batch embedding {len(texts_to_embed)} facilities...")
-            facility_embeddings = self.batch_generate_embeddings(texts_to_embed, batch_size=100)
-            
-            for facility, facility_embedding in zip(valid_facilities, facility_embeddings):
-                similarity = self.cosine_similarity(query_embedding, facility_embedding)
-                
-                if similarity >= similarity_threshold:
-                    results.append({
-                        "facility": facility,
-                        "similarity": similarity
-                    })
-        
-        # Sort by similarity (descending) and take top_k
-        results.sort(key=lambda x: x["similarity"], reverse=True)
-        top_results = results[:top_k]
-        
-        logger.info(f"Found {len(results)} matches, returning top {len(top_results)}")
-        return top_results
-    
-    def clear_cache(self) -> None:
-        """Clear the embedding cache."""
-        self._embedding_cache.clear()
-        logger.info("Embedding cache cleared")
-    
-    def get_cache_stats(self) -> Dict[str, Any]:
+        Raises:
+            Exception: If search fails
         """
-        Get cache statistics.
+        try:
+            logger.info(f"Searching facilities with query: {query[:100]}...")
+            
+            # Get the index
+            index = self.client.get_index(
+                endpoint_name=settings.vector_search_endpoint,
+                index_name=self.index_name
+            )
+            
+            # Perform similarity search
+            # The index will automatically generate embeddings for the query
+            response = index.similarity_search(
+                query_text=query,
+                columns=["id", "name", "facility_type", "operator_type", "address_city", 
+                        "address_stateOrRegion", "organizationDescription", "document_text"],
+                num_results=top_k,
+                filters=filters
+            )
+            
+            # Parse results
+            results = []
+            if response and "result" in response and "data_array" in response["result"]:
+                data_array = response["result"]["data_array"]
+                
+                for row in data_array:
+                    # Vector Search returns: [id, score, column1, column2, ...]
+                    # The structure is [primary_key, score, ...other columns in order]
+                    if len(row) >= 2:
+                        facility_id = row[0]
+                        similarity = float(row[1])
+                        
+                        # Only include results above threshold
+                        if similarity >= similarity_threshold:
+                            # Build facility dict from columns
+                            # Columns order: id, name, facility_type, operator_type, address_city, 
+                            #                address_stateOrRegion, organizationDescription, document_text
+                            facility_data = {
+                                "id": facility_id,
+                                "name": row[2] if len(row) > 2 else None,
+                                "facility_type": row[3] if len(row) > 3 else None,
+                                "operator_type": row[4] if len(row) > 4 else None,
+                                "address_city": row[5] if len(row) > 5 else None,
+                                "address_stateOrRegion": row[6] if len(row) > 6 else None,
+                                "organizationDescription": row[7] if len(row) > 7 else None,
+                                "document_text": row[8] if len(row) > 8 else None
+                            }
+                            
+                            results.append({
+                                "facility": facility_data,
+                                "similarity": similarity
+                            })
+            
+            logger.info(f"Found {len(results)} matching facilities")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            raise Exception(f"Failed to search facilities: {str(e)}")
+    
+    def get_index_info(self) -> Dict[str, Any]:
+        """
+        Get information about the vector search index.
         
         Returns:
-            Dictionary with cache stats
+            Dictionary with index metadata
         """
-        return {
-            "cache_size": len(self._embedding_cache),
-            "cache_max_size": self._cache_max_size,
-            "cache_utilization": len(self._embedding_cache) / self._cache_max_size if self._cache_max_size > 0 else 0
-        }
+        try:
+            index = self.client.get_index(
+                endpoint_name=settings.vector_search_endpoint,
+                index_name=self.index_name
+            )
+            
+            return {
+                "index_name": self.index_name,
+                "endpoint_name": settings.vector_search_endpoint,
+                "status": "available"
+            }
+        except Exception as e:
+            logger.error(f"Failed to get index info: {e}")
+            return {
+                "index_name": self.index_name,
+                "endpoint_name": settings.vector_search_endpoint,
+                "status": "error",
+                "error": str(e)
+            }
 
 
 # ==========================================================================

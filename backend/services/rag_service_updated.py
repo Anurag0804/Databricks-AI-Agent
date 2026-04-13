@@ -1,8 +1,7 @@
 """
 RAG (Retrieval-Augmented Generation) service for intelligent query answering.
 
-Combines Vector Search retrieval with LLM generation to answer natural
-language questions about Ghana healthcare facilities.
+Uses Vector Search for efficient retrieval and LLM for answer generation.
 """
 
 import logging
@@ -12,7 +11,6 @@ from openai import OpenAI
 
 from ..config import settings
 from .vector_search import get_vector_search_service
-from .databricks_client import get_databricks_client
 
 logger = logging.getLogger(__name__)
 
@@ -54,51 +52,7 @@ class RAGService:
         # Get vector search service
         self.vector_search = get_vector_search_service()
         
-        # Get Databricks client for optional data enrichment
-        self.db_client = get_databricks_client()
-        
         logger.info(f"Initialized RAGService with LLM: {self.llm_model}")
-    
-    def _enrich_facilities(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        Optionally enrich Vector Search results with additional fields from database.
-        
-        Args:
-            search_results: List of search results from Vector Search
-            
-        Returns:
-            Enriched search results
-        """
-        if not search_results:
-            return search_results
-        
-        try:
-            # Extract IDs
-            ids = [result["facility"]["id"] for result in search_results]
-            ids_str = ", ".join([f"'{id}'" for id in ids])
-            
-            # Fetch additional fields
-            query = f"""
-            SELECT id, numberDoctors, capacity, phone_numbers,
-                   specialties, procedure, equipment, capability
-            FROM {settings.facilities_table}
-            WHERE id IN ({ids_str})
-            """
-            
-            additional_data = self.db_client.fetch_all(query)
-            data_map = {row["id"]: row for row in additional_data}
-            
-            # Merge additional data
-            for result in search_results:
-                facility_id = result["facility"]["id"]
-                if facility_id in data_map:
-                    result["facility"].update(data_map[facility_id])
-            
-            return search_results
-            
-        except Exception as e:
-            logger.warning(f"Failed to enrich facilities: {e}. Using Vector Search data only.")
-            return search_results
     
     def _has_values(self, field: Any) -> bool:
         """
@@ -135,39 +89,22 @@ class RAGService:
             capabilities = facility.get('capability', [])
             phones = facility.get('phone_numbers', [])
             
-            # Build context - gracefully handle missing fields
-            context_lines = [
-                f"Facility {idx}:",
-                f"Name: {facility.get('name', 'N/A')}",
-                f"Type: {facility.get('facility_type', facility.get('facilityTypeId', 'N/A'))}",
-                f"Operator: {facility.get('operator_type', 'N/A')}",
-                f"Location: {facility.get('address_city', 'N/A')}, {facility.get('address_stateOrRegion', 'N/A')}",
-            ]
-            
-            # Optional fields from enrichment
-            if 'numberDoctors' in facility:
-                context_lines.append(f"Doctors: {facility.get('numberDoctors', 'N/A')}")
-            if 'capacity' in facility:
-                context_lines.append(f"Capacity: {facility.get('capacity', 'N/A')} beds")
-            
-            # Always include description
-            context_lines.append(f"Description: {facility.get('organizationDescription', 'N/A')}")
-            
-            # Optional enriched fields
-            if self._has_values(specialties):
-                context_lines.append(f"Specialties: {', '.join(specialties)}")
-            if self._has_values(procedures):
-                context_lines.append(f"Procedures: {', '.join(procedures[:5])}")
-            if self._has_values(equipment):
-                context_lines.append(f"Equipment: {', '.join(equipment[:5])}")
-            if self._has_values(capabilities):
-                context_lines.append(f"Capabilities: {', '.join(capabilities[:5])}")
-            if self._has_values(phones):
-                context_lines.append(f"Contact: {', '.join(phones)}")
-            
-            context_lines.append(f"Relevance: {similarity:.3f}")
-            
-            context_parts.append("\n".join(context_lines))
+            # Format facility info
+            context = f"""Facility {idx}:
+Name: {facility.get('name', 'N/A')}
+Type: {facility.get('facilityTypeId', 'N/A')}
+Location: {facility.get('address_city', 'N/A')}, {facility.get('address_stateOrRegion', 'N/A')}
+Doctors: {facility.get('numberDoctors', 'N/A')}
+Capacity: {facility.get('capacity', 'N/A')} beds
+Description: {facility.get('organizationDescription', 'N/A')}
+Specialties: {', '.join(specialties) if self._has_values(specialties) else 'None'}
+Procedures: {', '.join(procedures[:5]) if self._has_values(procedures) else 'None'}
+Equipment: {', '.join(equipment[:5]) if self._has_values(equipment) else 'None'}
+Capabilities: {', '.join(capabilities[:5]) if self._has_values(capabilities) else 'None'}
+Contact: {', '.join(phones) if self._has_values(phones) else 'N/A'}
+Relevance: {similarity:.3f}
+"""
+            context_parts.append(context)
         
         return "\n---\n".join(context_parts)
     
@@ -247,9 +184,7 @@ Answer:"""
         self,
         question: str,
         top_k: Optional[int] = None,
-        filters: Optional[Dict[str, Any]] = None,
-        similarity_threshold: Optional[float] = None,
-        enrich: bool = True
+        filters: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Answer a question using RAG pipeline with Vector Search.
@@ -258,51 +193,22 @@ Answer:"""
             question: Natural language question
             top_k: Number of facilities to retrieve
             filters: Optional filters (region, type, etc.)
-            similarity_threshold: Minimum similarity score
-            enrich: Whether to fetch additional fields from database
             
         Returns:
             Dictionary with answer, sources, and metrics
         """
         top_k = top_k or settings.rag_top_k_results
-        similarity_threshold = similarity_threshold or settings.rag_similarity_threshold
         
         logger.info(f"RAG query: {question[:100]}...")
         
-        # Step 1: Vector Search retrieval (no need to fetch all facilities!)
+        # Step 1: Semantic search using Vector Search (no DB fetch needed!)
         retrieval_start = time.time()
         
-        # Build filters for Vector Search if provided
-        vs_filters = None
-        if filters:
-            vs_filters = {}
-            if filters.get("region"):
-                vs_filters["address_stateOrRegion"] = filters["region"]
-            if filters.get("facility_type"):
-                vs_filters["facility_type"] = filters["facility_type"]
-        
-        try:
-            search_results = self.vector_search.search_facilities(
-                query=question,
-                top_k=top_k,
-                similarity_threshold=similarity_threshold,
-                filters=vs_filters
-            )
-        except Exception as e:
-            logger.error(f"Vector search failed: {e}")
-            return {
-                "answer": f"Search error: {str(e)}",
-                "sources": [],
-                "retrieval_time": 0,
-                "generation_time": 0,
-                "num_sources": 0,
-                "success": False,
-                "error": str(e)
-            }
-        
-        # Step 2: Optionally enrich with additional fields
-        if enrich:
-            search_results = self._enrich_facilities(search_results)
+        search_results = self.vector_search.search_facilities(
+            query=question,
+            top_k=top_k,
+            filters=filters
+        )
         
         retrieval_time = time.time() - retrieval_start
         
@@ -316,20 +222,20 @@ Answer:"""
                 "success": False
             }
         
-        # Step 3: Format context
+        # Step 2: Format context
         context = self.format_context(search_results)
         
-        # Step 4: Generate answer
+        # Step 3: Generate answer
         generation_result = self.generate_answer(question, context)
         
-        # Step 5: Format sources
+        # Step 4: Format sources
         sources = []
         for result in search_results:
             facility = result["facility"]
             sources.append({
                 "name": facility.get("name", "Unknown"),
                 "location": f"{facility.get('address_city', '')}, {facility.get('address_stateOrRegion', '')}",
-                "type": facility.get("facility_type", facility.get("facilityTypeId", "N/A")),
+                "type": facility.get("facilityTypeId", "N/A"),
                 "similarity": result["similarity"]
             })
         
