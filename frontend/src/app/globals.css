@@ -558,7 +558,7 @@ tr:last-child td {
   display: inline-block;
 }
 .severity-dot-critical { background: var(--error); box-shadow: 0 0 6px rgba(239, 68, 68, 0.5); }
-.severity-dot-high { background: var(--accent); box-shadow: 0 0 6px rgba(245, 158, 11, 0.5); }
+.severity-dot-high { background: #F97316; box-shadow: 0 0 6px rgba(249, 115, 22, 0.5); }
 .severity-dot-moderate { background: var(--warning); box-shadow: 0 0 6px rgba(234, 179, 8, 0.5); }
 .severity-dot-low { background: var(--success); box-shadow: 0 0 6px rgba(34, 197, 94, 0.5); }
 

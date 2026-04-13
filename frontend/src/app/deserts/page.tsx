@@ -106,9 +106,6 @@ export default function DesertsPage() {
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <span className="severity-dot severity-dot-moderate" /> Moderate
                 </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span className="severity-dot severity-dot-low" /> Adequate
-                </span>
               </div>
             </div>
             <GhanaMap regions={allRegions} mode="desert" height={480} />
@@ -192,18 +189,38 @@ export default function DesertsPage() {
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
             {[
-              { severity: 'Critical', color: '#EF4444', criteria: 'Total facilities < 5 OR Total doctors < 10 OR Zero bed capacity' },
-              { severity: 'High', color: '#F59E0B', criteria: 'Total facilities < 10 OR Total doctors < 20 OR Missing emergency and maternal care' },
-              { severity: 'Moderate', color: '#EAB308', criteria: 'Low bed capacity (< 50) OR Missing emergency OR maternal care services' },
+              { 
+                severity: 'Critical', color: '#EF4444', 
+                criteria: ['Fewer than 5 total facilities', 'Fewer than 10 total doctors', 'Total lack of inpatient bed capacity'] 
+              },
+              { 
+                severity: 'High', color: '#F97316', 
+                criteria: ['Fewer than 10 total facilities', 'Fewer than 20 total doctors', 'Missing both emergency & maternal care'] 
+              },
+              { 
+                severity: 'Moderate', color: '#EAB308', 
+                criteria: ['Low bed capacity (under 50 beds)', 'Missing either emergency or maternal care services'] 
+              },
             ].map((item) => (
               <div key={item.severity} style={{
-                padding: '1rem',
+                padding: '1.25rem',
                 borderRadius: 'var(--radius-md)',
                 background: 'var(--bg-secondary)',
                 borderLeft: `3px solid ${item.color}`,
               }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: item.color }}>{item.severity}</div>
-                <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{item.criteria}</div>
+                <div style={{ fontWeight: 700, marginBottom: '0.75rem', color: item.color, fontSize: '0.9375rem' }}>{item.severity}</div>
+                <ul style={{ 
+                  fontSize: '0.8125rem', 
+                  color: 'var(--text-secondary)', 
+                  lineHeight: 1.5, 
+                  margin: 0, 
+                  paddingLeft: '1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.375rem'
+                }}>
+                  {item.criteria.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
               </div>
             ))}
           </div>

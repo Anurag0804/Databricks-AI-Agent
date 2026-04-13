@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { GHANA_CENTER, REGION_COORDINATES } from '@/lib/constants';
@@ -28,17 +28,17 @@ function FitGhanaBounds() {
 
 function getColor(value: number, max: number): string {
   const ratio = Math.min(value / Math.max(max, 1), 1);
-  if (ratio > 0.7) return '#22C55E';
-  if (ratio > 0.4) return '#3B82F6';
-  if (ratio > 0.2) return '#F59E0B';
-  return '#EF4444';
+  if (ratio >= 0.5) return '#22C55E'; // Good — green (e.g. Accra, Ashanti)
+  if (ratio >= 0.25) return '#3B82F6'; // Moderate — blue (e.g. Western, Eastern, Central)
+  if (ratio >= 0.12) return '#F59E0B'; // Low — amber (e.g. Volta, Northern, Bono East)
+  return '#EF4444'; // Critical — red
 }
 
 function getDesertColor(severity?: string): string {
   if (severity === 'critical') return '#EF4444';
-  if (severity === 'high') return '#F59E0B';
+  if (severity === 'high') return '#F97316'; // Orange to contrast with Moderate's Yellow
   if (severity === 'moderate') return '#EAB308';
-  return '#22C55E';
+  return '#3B82F6'; // Non-desert, good — blue
 }
 
 interface GhanaMapProps {
@@ -51,8 +51,11 @@ interface GhanaMapProps {
 export default function GhanaMap({ regions, mode = 'density', height = 500, onRegionClick }: GhanaMapProps) {
   const [isClient, setIsClient] = useState(false);
 
+  const [mapKey, setMapKey] = useState<number>(0);
+
   useEffect(() => {
     setIsClient(true);
+    setMapKey(Date.now());
   }, []);
 
   if (!isClient) {
@@ -78,6 +81,7 @@ export default function GhanaMap({ regions, mode = 'density', height = 500, onRe
   return (
     <div className="map-wrapper" style={{ height }}>
       <MapContainer
+        key={mapKey}
         center={GHANA_CENTER}
         zoom={7}
         style={{ height: '100%', width: '100%' }}
@@ -92,6 +96,8 @@ export default function GhanaMap({ regions, mode = 'density', height = 500, onRe
         {regions.map((region) => {
           const coords = REGION_COORDINATES[region.address_stateOrRegion];
           if (!coords) return null;
+
+          if (mode === 'desert' && !region.is_medical_desert) return null;
 
           const color =
             mode === 'desert'
@@ -119,6 +125,9 @@ export default function GhanaMap({ regions, mode = 'density', height = 500, onRe
                 click: () => onRegionClick?.(region.address_stateOrRegion),
               }}
             >
+              <Tooltip direction="top" offset={[0, -radius]} opacity={0.95} permanent={false}>
+                <span style={{ fontWeight: 600, fontSize: '0.8125rem', color: '#0f172a' }}>{region.address_stateOrRegion}</span>
+              </Tooltip>
               <Popup>
                 <div style={{ minWidth: 180 }}>
                   <div style={{ fontWeight: 700, fontSize: '0.9375rem', marginBottom: 8, color: '#0f172a' }}>

@@ -78,13 +78,22 @@ export default function DashboardPage() {
   // Chart data
   const barData = [...regions]
     .sort((a, b) => b.total_facilities - a.total_facilities)
-    .slice(0, 10)
+    .slice(0, 5)
     .map((r) => ({ name: r.address_stateOrRegion, facilities: r.total_facilities, doctors: r.total_doctors }));
 
+  const rawPublic = regions.reduce((s, r) => s + r.public_facilities, 0);
+  const rawPrivate = regions.reduce((s, r) => s + r.private_facilities, 0);
+  const rawNgo = regions.reduce((s, r) => s + r.total_ngos, 0);
+  const rawTotal = rawPublic + rawPrivate + rawNgo;
+  
+  const scaledPublic = rawTotal > 0 ? Math.round((rawPublic / rawTotal) * totalFacilities) : 0;
+  const scaledPrivate = rawTotal > 0 ? Math.round((rawPrivate / rawTotal) * totalFacilities) : 0;
+  const scaledNgo = rawTotal > 0 ? totalFacilities - scaledPublic - scaledPrivate : 0;
+
   const pieData = [
-    { name: 'Public', value: regions.reduce((s, r) => s + r.public_facilities, 0) },
-    { name: 'Private', value: regions.reduce((s, r) => s + r.private_facilities, 0) },
-    { name: 'NGO', value: regions.reduce((s, r) => s + r.total_ngos, 0) },
+    { name: 'Public', value: scaledPublic },
+    { name: 'Private', value: scaledPrivate },
+    { name: 'NGO', value: scaledNgo },
   ];
 
   return (
@@ -209,8 +218,8 @@ export default function DashboardPage() {
                   <span style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Access Level</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {[
-                      { color: '#22C55E', label: 'High' },
-                      { color: '#3B82F6', label: 'Good' },
+                      { color: '#22C55E', label: 'Good' },
+                      { color: '#3B82F6', label: 'Moderate' },
                       { color: '#F59E0B', label: 'Low' },
                       { color: '#EF4444', label: 'Critical' },
                     ].map((item) => (
@@ -299,7 +308,7 @@ export default function DashboardPage() {
           <div className="card animate-fadeInUp" style={{ animationDelay: '0.3s' }}>
             <h2 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1.5rem' }}>
               <BarChart3 size={18} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle', color: 'var(--primary-light)' }} />
-              Facilities by Region (Top 10)
+              Facilities by Region (Top 5)
             </h2>
             <ResponsiveContainer width="100%" height={340}>
               <BarChart data={barData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>

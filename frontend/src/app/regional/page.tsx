@@ -258,8 +258,8 @@ function RegionalContent() {
                 <RadarChart data={radarData}>
                   <PolarGrid stroke="var(--border-primary)" />
                   <PolarAngleAxis dataKey="metric" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-                  <PolarRadiusAxis angle={0} tick={({ x, y, payload }: { x: number; y: number; payload: { value: number } }) => (
-                    <text x={x} y={y + 12} fill="var(--text-tertiary)" fontSize={10} textAnchor="middle" dominantBaseline="central" transform="">{payload.value}</text>
+                  <PolarRadiusAxis angle={0} tick={({ x, y, payload }: any) => (
+                    <text x={x} y={(y as number) + 12} fill="var(--text-tertiary)" fontSize={10} textAnchor="middle" dominantBaseline="central" transform="">{payload.value}</text>
                   )} />
                   {comparisonData.map((r, i) => (
                     <Radar

@@ -83,7 +83,17 @@ async def query_rag(request: RAGQueryRequest = Body(...)):
         
     except Exception as e:
         logger.error(f"RAG query failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+        # Return a graceful offline response instead of a raw 500 error
+        return RAGQueryResponse(
+            answer="I cannot connect to the Databricks backend at this time. Please assure your Databricks API credentials are correct in the .env file.",
+            sources=[],
+            retrieval_time=0.0,
+            generation_time=0.0,
+            num_sources=0,
+            success=False,
+            question=question,
+            model="offline-warning"
+        )
 
 
 @router.get("/health")
