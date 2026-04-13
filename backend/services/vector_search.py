@@ -9,6 +9,7 @@ import logging
 from typing import List, Dict, Any, Tuple, Optional
 from functools import lru_cache
 import numpy as np
+import time
 from openai import OpenAI
 
 from ..config import settings
@@ -114,6 +115,10 @@ class VectorSearchService:
             batch = texts[i:i + batch_size]
             
             try:
+                # Anti-throttling logic for Databricks unprovisioned endpoints (max 1 QPS)
+                # We sleep BEFORE the call so it distances itself from the question embeddings too!
+                time.sleep(1.5)
+                
                 # Call API with batch
                 response = self.client.embeddings.create(
                     model=self.embedding_model,
@@ -191,33 +196,37 @@ class VectorSearchService:
         
         # Calculate similarities
         results = []
+        valid_facilities = []
+        texts_to_embed = []
+        
+        # Prepare valid texts
         for facility in facilities:
-            # Get or generate facility embedding
             search_text = facility.get("search_text", "")
             if not search_text:
-                # Construct search text if not provided
                 search_text = " ".join([
-                    str(facility.get("name", "")),
-                    str(facility.get("organizationDescription", "")),
-                    str(facility.get("address_city", "")),
-                    str(facility.get("address_stateOrRegion", ""))
+                    str(facility.get("name", "")).strip(),
+                    str(facility.get("organizationDescription", "")).strip(),
+                    str(facility.get("address_city", "")).strip(),
+                    str(facility.get("address_stateOrRegion", "")).strip()
                 ])
             
-            if not search_text.strip():
-                continue
+            if search_text.strip():
+                valid_facilities.append(facility)
+                texts_to_embed.append(search_text.strip())
+                
+        # Batch generate embeddings instead of sequential
+        if texts_to_embed:
+            logger.info(f"Batch embedding {len(texts_to_embed)} facilities...")
+            facility_embeddings = self.batch_generate_embeddings(texts_to_embed, batch_size=100)
             
-            # Generate embedding
-            facility_embedding = self.generate_embedding(search_text)
-            
-            # Calculate similarity
-            similarity = self.cosine_similarity(query_embedding, facility_embedding)
-            
-            # Filter by threshold
-            if similarity >= similarity_threshold:
-                results.append({
-                    "facility": facility,
-                    "similarity": similarity
-                })
+            for facility, facility_embedding in zip(valid_facilities, facility_embeddings):
+                similarity = self.cosine_similarity(query_embedding, facility_embedding)
+                
+                if similarity >= similarity_threshold:
+                    results.append({
+                        "facility": facility,
+                        "similarity": similarity
+                    })
         
         # Sort by similarity (descending) and take top_k
         results.sort(key=lambda x: x["similarity"], reverse=True)
