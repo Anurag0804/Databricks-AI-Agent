@@ -199,7 +199,7 @@ export async function searchFacilities(
   page_size = 20,
   region?: string
 ): Promise<FacilityListResponse> {
-  const params = new URLSearchParams({ q, page: String(page), page_size: String(page_size) });
+  const params = new URLSearchParams({ query: q, page: String(page), page_size: String(page_size) });
   if (region) params.append('region', region);
   const { data } = await api.get(`/facilities/search/text?${params.toString()}`);
   return data;

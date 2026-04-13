@@ -12,7 +12,7 @@ pydantic-settings==2.1.0
 # Databricks
 databricks-sql-connector==3.0.2
 databricks-vectorsearch==0.40
-openai==1.10.0
+openai>=2.30.0
 
 # Data processing
 numpy==1.26.3

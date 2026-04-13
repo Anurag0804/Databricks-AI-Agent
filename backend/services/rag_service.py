@@ -62,43 +62,10 @@ class RAGService:
     def _enrich_facilities(self, search_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Optionally enrich Vector Search results with additional fields from database.
-        
-        Args:
-            search_results: List of search results from Vector Search
-            
-        Returns:
-            Enriched search results
+        Note: Bypassed because Databricks Vector Search natively returns the fully 
+        enriched document_text chunk containing all text metadata!
         """
-        if not search_results:
-            return search_results
-        
-        try:
-            # Extract IDs
-            ids = [result["facility"]["id"] for result in search_results]
-            ids_str = ", ".join([f"'{id}'" for id in ids])
-            
-            # Fetch additional fields
-            query = f"""
-            SELECT id, numberDoctors, capacity, phone_numbers,
-                   specialties, procedure, equipment, capability
-            FROM {settings.facilities_table}
-            WHERE id IN ({ids_str})
-            """
-            
-            additional_data = self.db_client.fetch_all(query)
-            data_map = {row["id"]: row for row in additional_data}
-            
-            # Merge additional data
-            for result in search_results:
-                facility_id = result["facility"]["id"]
-                if facility_id in data_map:
-                    result["facility"].update(data_map[facility_id])
-            
-            return search_results
-            
-        except Exception as e:
-            logger.warning(f"Failed to enrich facilities: {e}. Using Vector Search data only.")
-            return search_results
+        return search_results
     
     def _has_values(self, field: Any) -> bool:
         """
@@ -128,46 +95,13 @@ class RAGService:
             facility = result["facility"]
             similarity = result["similarity"]
             
-            # Helper to safely get list values
-            specialties = facility.get('specialties', [])
-            procedures = facility.get('procedure', [])
-            equipment = facility.get('equipment', [])
-            capabilities = facility.get('capability', [])
-            phones = facility.get('phone_numbers', [])
+            document_text = facility.get("document_text", "")
             
-            # Build context - gracefully handle missing fields
-            context_lines = [
-                f"Facility {idx}:",
-                f"Name: {facility.get('name', 'N/A')}",
-                f"Type: {facility.get('facility_type', facility.get('facilityTypeId', 'N/A'))}",
-                f"Operator: {facility.get('operator_type', 'N/A')}",
-                f"Location: {facility.get('address_city', 'N/A')}, {facility.get('address_stateOrRegion', 'N/A')}",
-            ]
-            
-            # Optional fields from enrichment
-            if 'numberDoctors' in facility:
-                context_lines.append(f"Doctors: {facility.get('numberDoctors', 'N/A')}")
-            if 'capacity' in facility:
-                context_lines.append(f"Capacity: {facility.get('capacity', 'N/A')} beds")
-            
-            # Always include description
-            context_lines.append(f"Description: {facility.get('organizationDescription', 'N/A')}")
-            
-            # Optional enriched fields
-            if self._has_values(specialties):
-                context_lines.append(f"Specialties: {', '.join(specialties)}")
-            if self._has_values(procedures):
-                context_lines.append(f"Procedures: {', '.join(procedures[:5])}")
-            if self._has_values(equipment):
-                context_lines.append(f"Equipment: {', '.join(equipment[:5])}")
-            if self._has_values(capabilities):
-                context_lines.append(f"Capabilities: {', '.join(capabilities[:5])}")
-            if self._has_values(phones):
-                context_lines.append(f"Contact: {', '.join(phones)}")
-            
-            context_lines.append(f"Relevance: {similarity:.3f}")
-            
-            context_parts.append("\n".join(context_lines))
+            # Build context via the pre-formatted document text!
+            if document_text:
+                context_parts.append(f"Facility {idx}:\n{document_text}\nRelevance: {similarity:.3f}")
+            else:
+                context_parts.append(f"Facility {idx}:\nID: {facility.get('id')}\nRelevance: {similarity:.3f}")
         
         return "\n---\n".join(context_parts)
     
@@ -297,7 +231,9 @@ Answer:"""
                 "generation_time": 0,
                 "num_sources": 0,
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "question": question,
+                "model": "offline-warning"
             }
         
         # Step 2: Optionally enrich with additional fields

@@ -36,7 +36,14 @@ class VectorSearchService:
         """
         self.workspace_url = workspace_url or settings.databricks_host
         self.access_token = access_token or settings.databricks_token
-        self.index_name = settings.vector_index_name
+        
+        # Ensure index name is fully qualified (<catalog>.<schema>.<index>)
+        index_name_raw = settings.vector_search_index
+        if "." not in index_name_raw:
+            self.index_name = f"{settings.catalog_name}.{settings.schema_name}.{index_name_raw}"
+        else:
+            self.index_name = index_name_raw
+
         
         # Initialize Vector Search client
         self.client = VectorSearchClient(
@@ -82,8 +89,7 @@ class VectorSearchService:
             # The index will automatically generate embeddings for the query
             response = index.similarity_search(
                 query_text=query,
-                columns=["id", "name", "facility_type", "operator_type", "address_city", 
-                        "address_stateOrRegion", "organizationDescription", "document_text"],
+                columns=["id", "document_text"],
                 num_results=top_k,
                 filters=filters
             )
@@ -94,26 +100,18 @@ class VectorSearchService:
                 data_array = response["result"]["data_array"]
                 
                 for row in data_array:
-                    # Vector Search returns: [id, score, column1, column2, ...]
-                    # The structure is [primary_key, score, ...other columns in order]
-                    if len(row) >= 2:
+                    # Vector Search returns: [id, document_text, score]
+                    if len(row) >= 3:
                         facility_id = row[0]
-                        similarity = float(row[1])
+                        document_text = row[1]
+                        similarity = float(row[2])
                         
                         # Only include results above threshold
                         if similarity >= similarity_threshold:
-                            # Build facility dict from columns
-                            # Columns order: id, name, facility_type, operator_type, address_city, 
-                            #                address_stateOrRegion, organizationDescription, document_text
+                            # Deliver the text payload fully packaged to the RAG layer
                             facility_data = {
                                 "id": facility_id,
-                                "name": row[2] if len(row) > 2 else None,
-                                "facility_type": row[3] if len(row) > 3 else None,
-                                "operator_type": row[4] if len(row) > 4 else None,
-                                "address_city": row[5] if len(row) > 5 else None,
-                                "address_stateOrRegion": row[6] if len(row) > 6 else None,
-                                "organizationDescription": row[7] if len(row) > 7 else None,
-                                "document_text": row[8] if len(row) > 8 else None
+                                "document_text": document_text
                             }
                             
                             results.append({
