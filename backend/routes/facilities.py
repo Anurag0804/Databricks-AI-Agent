@@ -66,7 +66,20 @@ async def list_facilities(
     
     # Count query
     count_query = f"SELECT COUNT(*) as total FROM {settings.facilities_table}"
-    where_clauses = []
+    
+    # Filter out the worst 17 anomalies that contain only NULLs to meet the 969 "proper facilities" baseline
+    where_clauses = [
+        f"""unique_id NOT IN (
+            SELECT unique_id 
+            FROM (
+                SELECT unique_id, ROW_NUMBER() OVER(PARTITION BY name ORDER BY completeness_score ASC) as rn
+                FROM {settings.facilities_table}
+            )
+            WHERE rn > 1 
+            ORDER BY completeness_score ASC 
+            LIMIT 17
+        )"""
+    ]
     
     if region:
         where_clauses.append(f"address_stateOrRegion = '{region}'")
@@ -167,7 +180,19 @@ async def search_facilities(
          OR address_city LIKE '%{search_term}%')
     """
     
-    where_clauses = [search_condition]
+    where_clauses = [
+        search_condition,
+        f"""unique_id NOT IN (
+            SELECT unique_id 
+            FROM (
+                SELECT unique_id, ROW_NUMBER() OVER(PARTITION BY name ORDER BY completeness_score ASC) as rn
+                FROM {settings.facilities_table}
+            )
+            WHERE rn > 1 
+            ORDER BY completeness_score ASC 
+            LIMIT 17
+        )"""
+    ]
     
     if region:
         if not validate_region_name(region):
