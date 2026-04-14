@@ -2,7 +2,7 @@
 
 **AI-powered healthcare facility search and analytics platform for Ghana**
 
-Built by Virtue Foundation | Powered by Databricks
+Built by Anurag Ray Chaudhuri for Virtue Foundation | Powered by Databricks
 
 ---
 
@@ -296,6 +296,6 @@ This project is maintained by Virtue Foundation.
 
 ---
 
-**Built with ❤️ by Virtue Foundation**
+**Built with ❤️ for Virtue Foundation**
 
 *Powered by Databricks AI*
