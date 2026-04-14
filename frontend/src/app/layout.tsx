@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 import { Toaster } from "react-hot-toast";
 
 export const metadata: Metadata = {
@@ -47,20 +48,7 @@ export default function RootLayout({
         <main style={{ minHeight: 'calc(100vh - 64px)' }}>
           {children}
         </main>
-        <footer
-          style={{
-            borderTop: '1px solid var(--border-primary)',
-            padding: '2rem 1.5rem',
-            textAlign: 'center',
-            fontSize: '0.8125rem',
-            color: 'var(--text-tertiary)',
-          }}
-        >
-          <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-            © 2026 Virtue Foundation — Ghana Healthcare Intelligence Platform.
-            Built for the Databricks × Accenture Hackathon.
-          </div>
-        </footer>
+        <Footer />
       </body>
     </html>
   );

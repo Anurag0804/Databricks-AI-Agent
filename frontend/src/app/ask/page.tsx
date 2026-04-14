@@ -24,9 +24,8 @@ export default function AskPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [expandedSources, setExpandedSources] = useState<string | null>(null);
-  const [regionFilter, setRegionFilter] = useState('');
-  const [topK, setTopK] = useState(5);
+  const [regionFilter] = useState('');
+  const [topK] = useState(5);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -37,6 +36,14 @@ export default function AskPage() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Prevent body scrolling on this page
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, []);
 
   const handleSubmit = async (question?: string) => {
     const q = question || input.trim();
@@ -105,7 +112,7 @@ export default function AskPage() {
   };
 
   return (
-    <div className="page-enter" style={{ height: 'calc(100vh - 64px)', display: 'flex' }}>
+    <div className="page-enter" style={{ height: 'calc(100vh - 64px)', display: 'flex', overflow: 'hidden' }}>
       {/* Sidebar */}
       <div style={{
         width: 280,
@@ -127,42 +134,13 @@ export default function AskPage() {
           </p>
         </div>
 
-        {/* Filters */}
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-            Region Filter
-          </label>
-          <select
-            className="input select"
-            value={regionFilter}
-            onChange={(e) => setRegionFilter(e.target.value)}
-          >
-            <option value="">All Regions</option>
-            {GHANA_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-            Results Count (Top K): {topK}
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="20"
-            value={topK}
-            onChange={(e) => setTopK(parseInt(e.target.value))}
-            style={{ width: '100%', accentColor: 'var(--primary)' }}
-          />
-        </div>
-
         {/* Example Queries */}
         <div>
           <h3 style={{ fontSize: '0.8125rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
             Try asking:
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
-            {RAG_EXAMPLE_QUERIES.map((q, i) => (
+            {RAG_EXAMPLE_QUERIES.slice(0, 1).map((q, i) => (
               <button
                 key={i}
                 className="btn btn-ghost btn-sm"
@@ -185,14 +163,14 @@ export default function AskPage() {
         </div>
 
         {messages.length > 0 && (
-          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--error)' }} onClick={clearChat}>
+          <button className="btn btn-ghost btn-sm" style={{ color: 'var(--error)', marginTop: 'auto' }} onClick={clearChat}>
             <Trash2 size={14} /> Clear Chat
           </button>
         )}
       </div>
 
       {/* Main Chat Area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
         {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
           {messages.length === 0 ? (
@@ -271,52 +249,6 @@ export default function AskPage() {
                           )}
                         </div>
                       )}
-
-                      {/* Sources */}
-                      {msg.sources && msg.sources.length > 0 && (
-                        <div style={{ marginTop: '0.75rem', paddingLeft: '0.5rem' }}>
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setExpandedSources(expandedSources === msg.id ? null : msg.id)}
-                            style={{ fontSize: '0.8125rem' }}
-                          >
-                            {expandedSources === msg.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            View {msg.sources.length} source{msg.sources.length > 1 ? 's' : ''}
-                          </button>
-
-                          {expandedSources === msg.id && (
-                            <div className="animate-fadeIn" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                              {msg.sources.map((src, i) => (
-                                <div
-                                  key={i}
-                                  className="card"
-                                  style={{ padding: '0.75rem', fontSize: '0.8125rem' }}
-                                >
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
-                                    <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                                      <Building2 size={14} color="var(--primary-light)" />
-                                      {src.name}
-                                    </span>
-                                    <span className="badge badge-primary">
-                                      {(src.similarity_score * 100).toFixed(1)}% match
-                                    </span>
-                                  </div>
-                                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                                    {src.facility_type && <span style={{ textTransform: 'capitalize' }}>{src.facility_type} · </span>}
-                                    {src.region && <span>{src.region}</span>}
-                                    {src.city && <span> · {src.city}</span>}
-                                  </div>
-                                  {src.description && (
-                                    <p style={{ marginTop: '0.375rem', color: 'var(--text-tertiary)', fontSize: '0.75rem', lineHeight: 1.5 }}>
-                                      {src.description.slice(0, 200)}{src.description.length > 200 ? '…' : ''}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   )}
                 </div>
@@ -370,8 +302,9 @@ export default function AskPage() {
                 {loading ? <Loader2 size={18} className="animate-spin-slow" /> : <Send size={18} />}
               </button>
             </form>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginTop: '0.5rem', textAlign: 'center' }}>
-              Powered by Databricks RAG · Semantic search over {formatNumber(986)} healthcare facilities
+            <div style={{ fontSize: '0.725rem', color: 'var(--text-tertiary)', marginTop: '0.75rem', textAlign: 'center', lineHeight: 1.5 }}>
+              <div>Powered by Databricks RAG • Semantic search over {formatNumber(986)} healthcare facilities</div>
+              <div style={{ marginTop: '0.25rem' }}>© 2026 Virtue Foundation — Ghana Healthcare Intelligence Platform. Built for the Databricks × Accenture Hackathon.</div>
             </div>
           </div>
         </div>
